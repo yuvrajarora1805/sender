@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# App Data
+data.csv
+session.json
+
+# Logs
+logs/
+*.log
+
+# Node & Next.js (for admin-dashboard)
+node_modules/
+admin-dashboard/.next/
+admin-dashboard/out/
+admin-dashboard/build/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS config
+.DS_Store
+Thumbs.db
