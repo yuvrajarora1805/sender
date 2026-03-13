@@ -925,29 +925,29 @@ def _send_message(driver, phone, message):
 # ═══════════════════════════════════════════
 
 def _init_visual_cursor(driver):
-    """Injects a fake glowing cursor and movement engine into the WhatsApp DOM."""
+    """Injects a fake glowing cursor and a hyper-randomized movement engine."""
     script = """
     if (!document.getElementById('anti-cursor')) {
         const cursor = document.createElement('div');
         cursor.id = 'anti-cursor';
         cursor.style.cssText = `
             position: fixed;
-            width: 20px;
-            height: 20px;
-            background: rgba(0, 255, 255, 0.4);
+            width: 18px;
+            height: 18px;
+            background: rgba(0, 255, 255, 0.35);
             border: 2px solid rgba(0, 255, 255, 0.8);
             border-radius: 50%;
             pointer-events: none;
             z-index: 999999;
-            transition: opacity 0.3s ease;
+            transition: opacity 0.3s ease, border-color 0.2s ease;
             transform: translate(-50%, -50%);
-            box-shadow: 0 0 15px rgba(0, 255, 255, 0.6);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
             opacity: 0;
             left: 0px;
             top: 0px;
         `;
         document.body.appendChild(cursor);
-        window.antiCursorPos = { x: 0, y: 0 };
+        window.antiCursorPos = { x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight };
     }
 
     window.moveAntiCursor = function(targetX, targetY) {
@@ -957,31 +957,53 @@ def _init_visual_cursor(driver):
         const startX = window.antiCursorPos.x;
         const startY = window.antiCursorPos.y;
         
-        // Random control point for Bezier curve
-        const midX = (startX + targetX) / 2 + (Math.random() - 0.5) * 200;
-        const midY = (startY + targetY) / 2 + (Math.random() - 0.5) * 200;
+        // Multi-point jitter control
+        const midX = (startX + targetX) / 2 + (Math.random() - 0.5) * 400;
+        const midY = (startY + targetY) / 2 + (Math.random() - 0.5) * 400;
+        
+        // Secondary "pull" point for extra curvature
+        const midX2 = (midX + targetX) / 2 + (Math.random() - 0.5) * 200;
+        const midY2 = (midY + targetY) / 2 + (Math.random() - 0.5) * 200;
 
-        const duration = 400 + Math.random() * 200;
+        const duration = 500 + Math.random() * 400;
         const startTime = performance.now();
 
         function animate(currentTime) {
             const elapsed = currentTime - startTime;
-            const t = Math.min(elapsed / duration, 1);
+            const rawT = Math.min(elapsed / duration, 1);
             
-            // Quadratic Bezier: (1-t)^2*P0 + 2(1-t)t*P1 + t^2*P2
-            const easedT = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; // Ease in-out
+            // Human Easing: Non-linear, slightly "hesitant" speeds
+            const t = rawT < 0.5 ? 2 * rawT * rawT : -1 + (4 - 2 * rawT) * rawT;
             
-            const x = Math.pow(1 - easedT, 2) * startX + 2 * (1 - easedT) * easedT * midX + Math.pow(easedT, 2) * targetX;
-            const y = Math.pow(1 - easedT, 2) * startY + 2 * (1 - easedT) * easedT * midY + Math.pow(easedT, 2) * targetY;
+            // Cubic Bezier calculation
+            const x = Math.pow(1 - t, 3) * startX + 
+                      3 * Math.pow(1 - t, 2) * t * midX + 
+                      3 * (1 - t) * Math.pow(t, 2) * midX2 + 
+                      Math.pow(t, 3) * targetX;
+                      
+            const y = Math.pow(1 - t, 3) * startY + 
+                      3 * Math.pow(1 - t, 2) * t * midY + 
+                      3 * (1 - t) * Math.pow(t, 2) * midY2 + 
+                      Math.pow(t, 3) * targetY;
 
-            cursor.style.left = x + 'px';
-            cursor.style.top = y + 'px';
+            // Add "Micro-Jitter" (Hand tremor)
+            const jitterX = (Math.random() - 0.5) * 2 * (1 - t);
+            const jitterY = (Math.random() - 0.5) * 2 * (1 - t);
+
+            cursor.style.left = (x + jitterX) + 'px';
+            cursor.style.top = (y + jitterY) + 'px';
             cursor.style.opacity = '1';
             
             window.antiCursorPos = { x, y };
 
-            if (t < 1) {
+            if (rawT < 1) {
                 requestAnimationFrame(animate);
+            } else {
+                // Landing wobble/settle
+                cursor.style.transform = 'translate(-50%, -50%) scale(1.1)';
+                setTimeout(() => {
+                    cursor.style.transform = 'translate(-50%, -50%) scale(1)';
+                }, 150);
             }
         }
         requestAnimationFrame(animate);
