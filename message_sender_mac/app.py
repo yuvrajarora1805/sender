@@ -951,7 +951,7 @@ def _send_message(driver, phone, message):
 # ═══════════════════════════════════════════
 
 def _init_visual_cursor(driver):
-    """Injects a fake glowing cursor into the WhatsApp DOM."""
+    """Injects a fake glowing cursor and movement engine into the WhatsApp DOM."""
     script = """
     if (!document.getElementById('anti-cursor')) {
         const cursor = document.createElement('div');
@@ -965,38 +965,71 @@ def _init_visual_cursor(driver):
             border-radius: 50%;
             pointer-events: none;
             z-index: 999999;
-            transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+            transition: opacity 0.3s ease;
             transform: translate(-50%, -50%);
             box-shadow: 0 0 15px rgba(0, 255, 255, 0.6);
             opacity: 0;
+            left: 0px;
+            top: 0px;
         `;
         document.body.appendChild(cursor);
+        window.antiCursorPos = { x: 0, y: 0 };
     }
+
+    window.moveAntiCursor = function(targetX, targetY) {
+        const cursor = document.getElementById('anti-cursor');
+        if (!cursor) return;
+
+        const startX = window.antiCursorPos.x;
+        const startY = window.antiCursorPos.y;
+        
+        // Random control point for Bezier curve
+        const midX = (startX + targetX) / 2 + (Math.random() - 0.5) * 200;
+        const midY = (startY + targetY) / 2 + (Math.random() - 0.5) * 200;
+
+        const duration = 400 + Math.random() * 200;
+        const startTime = performance.now();
+
+        function animate(currentTime) {
+            const elapsed = currentTime - startTime;
+            const t = Math.min(elapsed / duration, 1);
+            
+            // Quadratic Bezier: (1-t)^2*P0 + 2(1-t)t*P1 + t^2*P2
+            const easedT = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; // Ease in-out
+            
+            const x = Math.pow(1 - easedT, 2) * startX + 2 * (1 - easedT) * easedT * midX + Math.pow(easedT, 2) * targetX;
+            const y = Math.pow(1 - easedT, 2) * startY + 2 * (1 - easedT) * easedT * midY + Math.pow(easedT, 2) * targetY;
+
+            cursor.style.left = x + 'px';
+            cursor.style.top = y + 'px';
+            cursor.style.opacity = '1';
+            
+            window.antiCursorPos = { x, y };
+
+            if (t < 1) {
+                requestAnimationFrame(animate);
+            }
+        }
+        requestAnimationFrame(animate);
+    };
     """
     try:
         driver.execute_script(script)
     except: pass
 
 def _move_visual_cursor(driver, element=None):
-    """Moves the visual cursor to an element or a random spot."""
+    """Moves the visual cursor along a Bezier path to an element."""
     if element:
-        script = """
-        const cursor = document.getElementById('anti-cursor');
-        const el = arguments[0];
-        if (cursor && el) {
-            const rect = el.getBoundingClientRect();
-            const x = rect.left + (rect.width / 2);
-            const y = rect.top + (rect.height / 2);
-            cursor.style.opacity = '1';
-            cursor.style.left = x + 'px';
-            cursor.style.top = y + 'px';
-        }
-        """
         try:
-            driver.execute_script(script, element)
+            # Get center coordinates in Python
+            rect = element.rect
+            target_x = rect['x'] + rect['width'] / 2
+            target_y = rect['y'] + rect['height'] / 2
+            
+            # Call our JS engine
+            driver.execute_script(f"window.moveAntiCursor({target_x}, {target_y});")
         except: pass
     else:
-        # Move to a random waiting position or hide
         try:
             driver.execute_script("document.getElementById('anti-cursor').style.opacity = '0';")
         except: pass
