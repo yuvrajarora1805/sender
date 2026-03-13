@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  wa-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wa-admin
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - DB_HOST=wa-db
+      - DB_USER=license_user
+      - DB_PASSWORD=${DB_PASSWORD:-secure_database_password}
+      - DB_NAME=license_db
+    depends_on:
+      wa-db:
+        condition: service_healthy
+    networks:
+      - wa-network
+
+  wa-db:
+    image: mysql:8.0
+    container_name: wa-db
+    restart: unless-stopped
+    ports:
+      - "3307:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-super_secure_root}
+      MYSQL_DATABASE: license_db
+      MYSQL_USER: license_user
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secure_database_password}
+    volumes:
+      - wa_db_data:/var/lib/mysql
+      # Mount the schema so it auto-initializes on the very first run
+      - ./server/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - wa-network
+
+volumes:
+  wa_db_data:
+
+networks:
+  wa-network:

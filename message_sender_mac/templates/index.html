@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Auto Sender</title>
+    <meta name="description" content="Upload CSV data and send WhatsApp messages automatically with stealth anti-detection">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <!-- ── Animated background particles ── -->
+    <div class="bg-particles" id="bgParticles"></div>
+
+    <!-- ── Main container ── -->
+    <div class="app-shell">
+
+        <!-- HEADER -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1>WhatsApp Auto Sender</h1>
+                    <p class="subtitle">Stealth Edition — Upload CSV & Send</p>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="subscription-status {{ 'active' if session.status == 'active' else 'inactive' }}" id="subStatus">
+                    <span class="sub-plan">{{ session.username }} ({{ session.plan }})</span>
+                    <span class="sub-limit"><span id="subSent">{{ session.sent_today }}</span> / {{ session.daily_limit }} Daily</span>
+                    <span class="sub-expiry" style="font-size: 11px; color: #a1a1aa; margin-top: 3px;">Expires: <span id="subExpires" style="color: #d4d4d8; font-weight: 500;">
+                        {% if session.expires_at %}
+                            {{ session.expires_at.split('T')[0] if 'T' in session.expires_at else session.expires_at.split(' ')[0] }}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </span></span>
+                </div>
+                <div class="status-badge" id="statusBadge">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Idle</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN CONTENT -->
+        <main class="main-content">
+
+            <!-- LEFT COLUMN: Upload + Table -->
+            <section class="panel panel-data">
+                <div class="panel-header">
+                    <h2>📋 Message Data</h2>
+                    <span class="row-count" id="rowCount">0 rows</span>
+                </div>
+
+                <!-- Upload Zone -->
+                <div class="upload-zone" id="uploadZone">
+                    <div class="upload-inner">
+                        <div class="upload-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                        </div>
+                        <p class="upload-label">Drop CSV file here or <span class="upload-browse">browse</span></p>
+                        <p class="upload-hint">Required columns: <code>phone</code>, <code>message</code></p>
+                    </div>
+                    <input type="file" id="fileInput" accept=".csv" hidden>
+                </div>
+
+                <!-- Data Table -->
+                <div class="table-wrapper" id="tableWrapper">
+                    <table class="data-table" id="dataTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Phone</th>
+                                <th>Message</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- RIGHT COLUMN: Controls + Dashboard -->
+            <section class="panel panel-dashboard">
+                <div class="panel-header">
+                    <h2>🚀 Dashboard</h2>
+                </div>
+
+                <!-- Controls -->
+                <div class="controls" id="controls">
+                    <button class="btn btn-start" id="btnStart" disabled>
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                            <polygon points="5 3 19 12 5 21 5 3"/>
+                        </svg>
+                        Start Sending
+                    </button>
+                    <button class="btn btn-stop" id="btnStop" disabled>
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                            <rect x="6" y="4" width="4" height="16"/>
+                            <rect x="14" y="4" width="4" height="16"/>
+                        </svg>
+                        Stop
+                    </button>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="stats-grid">
+                    <div class="stat-card stat-total">
+                        <div class="stat-value" id="statTotal">0</div>
+                        <div class="stat-label">Total</div>
+                    </div>
+                    <div class="stat-card stat-progress">
+                        <div class="stat-value" id="statCurrent">0</div>
+                        <div class="stat-label">Processed</div>
+                    </div>
+                    <div class="stat-card stat-success">
+                        <div class="stat-value" id="statSuccess">0</div>
+                        <div class="stat-label">Success</div>
+                    </div>
+                    <div class="stat-card stat-failed">
+                        <div class="stat-value" id="statFailed">0</div>
+                        <div class="stat-label">Failed</div>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="progress-container">
+                    <div class="progress-info">
+                        <span id="progressPercent">0%</span>
+                        <span id="progressDetail">0 / 0</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                        <div class="progress-glow" id="progressGlow"></div>
+                    </div>
+                </div>
+
+                <!-- Live Log -->
+                <div class="log-section">
+                    <div class="log-header">
+                        <h3>📝 Live Log</h3>
+                        <button class="btn-icon" id="btnClearLog" title="Clear log">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="log-container" id="logContainer">
+                        <div class="log-empty">Upload a CSV file and start sending to see logs here.</div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- ── User Login Overlay ── -->
+    <div class="license-overlay {{ 'hidden' if session.status == 'active' else 'visible' }}" id="licenseOverlay">
+        <div class="license-card">
+            <div class="license-header">
+                <div class="license-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                </div>
+                <h2>User Login</h2>
+                <p>Enter your credentials to access the software.</p>
+            </div>
+            
+            <div class="license-body">
+                <form id="loginForm" onsubmit="return false;">
+                    <div class="input-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" placeholder="Enter username" value="{{ session.username }}" autocomplete="username">
+                    </div>
+                    <div class="input-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" placeholder="Enter password" autocomplete="current-password">
+                        <p class="error-msg" id="loginError">{{ session.message }}</p>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="btnLogin">
+                        <span>Login</span>
+                        <div class="btn-loader hidden"></div>
+                    </button>
+                </form>
+            </div>
+            
+            <div class="license-footer">
+                <p>Contact admin to create an account.</p>
+                <p class="hwid-info">HWID: <span id="hwidDisplay">Generating...</span></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+    <script>
+        // Set initial session state for JS
+        window.APP_SESSION = {{ session | tojson }};
+    </script>
+</body>
+</html>
