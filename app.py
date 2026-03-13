@@ -59,11 +59,11 @@ LOG_DIR     = os.path.join(os.path.expanduser("~"), "whatsapp_sender_logs")
 WAIT_TIMEOUT = 120
 
 # Rate limiting
-MAX_SENDS_PER_HOUR  = 1000
-MIN_DELAY_BETWEEN   = 1.5
-MAX_DELAY_BETWEEN   = 3.0
-LONG_BREAK_EVERY    = 1000
-LONG_BREAK_DURATION = (8 * 60, 15 * 60)
+MAX_SENDS_PER_HOUR  = 5000
+MIN_DELAY_BETWEEN   = 0.2
+MAX_DELAY_BETWEEN   = 0.8
+LONG_BREAK_EVERY    = 2000
+LONG_BREAK_DURATION = (1 * 60, 3 * 60)
 
 # ═══════════════════════════════════════════
 #  FLASK APP
@@ -187,6 +187,7 @@ def validate_session():
         data = resp.json()
         
         if data.get("status") == "success":
+            data["last_validated_at"] = datetime.now().isoformat()
             with _state_lock:
                 _state["session"].update({
                     "username": data["username"],
@@ -195,8 +196,10 @@ def validate_session():
                     "daily_limit": data["daily_limit"],
                     "sent_today": data["sent_today"],
                     "expires_at": data["expires_at"],
-                    "message": ""
+                    "message": "",
+                    "last_validated_at": data["last_validated_at"]
                 })
+            _save_session(_state["session"])
             return data
         else:
             with _state_lock:
@@ -206,6 +209,21 @@ def validate_session():
                  })
             return data
     except Exception as e:
+        # ── OFFLINE GRACE MODE ──
+        # If server is down, check if we had a successful validation within last 24h
+        last_val = session.get("last_validated_at")
+        if last_val:
+            try:
+                last_dt = datetime.fromisoformat(last_val)
+                hours_since = (datetime.now() - last_dt).total_seconds() / 3600
+                if hours_since < 24:
+                    with _state_lock:
+                        _state["session"].update(session)
+                        _state["session"]["status"] = "active"
+                        _state["session"]["message"] = "Offline Mode (Server unreachable)"
+                    return _state["session"]
+            except: pass
+            
         return {"status": "error", "message": f"Server connection failed: {e}"}
 
 def login_user(username, password):
@@ -220,6 +238,7 @@ def login_user(username, password):
         data = resp.json()
         
         if data.get("status") == "success":
+            data["last_validated_at"] = datetime.now().isoformat()
             with _state_lock:
                 _state["session"].update({
                     "username": username,
@@ -228,9 +247,10 @@ def login_user(username, password):
                     "daily_limit": data["daily_limit"],
                     "sent_today": data["sent_today"],
                     "expires_at": data["expires_at"],
-                    "message": ""
+                    "message": "",
+                    "last_validated_at": data["last_validated_at"]
                 })
-            _save_session({"username": username})
+            _save_session(_state["session"])
             return data
         else:
             return data
@@ -792,9 +812,15 @@ def _send_message(driver, phone, message):
             _log(f"⚠️ New Chat button not found")
             return False
 
+        # Move visual cursor to button
+        _init_visual_cursor(driver)
+        _move_visual_cursor(driver, new_chat_btn)
+        time.sleep(0.3)
+        _pulse_visual_cursor(driver)
+
         # Just use DOM click
         new_chat_btn.click()
-        time.sleep(random.uniform(0.8, 1.5))
+        time.sleep(random.uniform(0.2, 0.5))
 
         # ── Step 2: Find the search box (v145 contenteditable div) ──
         _log(f"🔍 Typing number {phone}...")
@@ -816,20 +842,25 @@ def _send_message(driver, phone, message):
             _log(f"⚠️ Search box not found")
             return False
 
+        # Move visual cursor to search box
+        _move_visual_cursor(driver, search_box)
+        time.sleep(0.2)
+        _pulse_visual_cursor(driver)
+
         # Just use DOM click
         search_box.click()
-        time.sleep(random.uniform(0.5, 0.8))
+        time.sleep(random.uniform(0.1, 0.3))
 
         search_box.send_keys(Keys.CONTROL + "a")
         search_box.send_keys(Keys.BACKSPACE)
-        time.sleep(random.uniform(0.2, 0.5))
+        time.sleep(random.uniform(0.1, 0.3))
 
         _human_type(search_box, phone)
-        time.sleep(random.uniform(0.5, 1.0))
+        time.sleep(random.uniform(0.1, 0.3))
 
         search_box.send_keys(Keys.ENTER)
         _log(f"⏎ Pressed Enter to open chat for {phone}")
-        time.sleep(random.uniform(1.0, 2.0))
+        time.sleep(random.uniform(0.4, 0.8))
 
         # ── Step 3: Wait for the message input box ──
         msg_box = None
@@ -852,26 +883,31 @@ def _send_message(driver, phone, message):
             time.sleep(0.5)
             return False
 
+        # Move visual cursor to message box
+        _move_visual_cursor(driver, msg_box)
+        time.sleep(0.2)
+        _pulse_visual_cursor(driver)
+
         # DOM click
         msg_box.click()
-        time.sleep(random.uniform(0.3, 0.6))
+        time.sleep(random.uniform(0.2, 0.4))
 
         msg_box.send_keys(Keys.CONTROL + "a")
         msg_box.send_keys(Keys.BACKSPACE)
-        time.sleep(random.uniform(0.15, 0.3))
+        time.sleep(random.uniform(0.1, 0.2))
 
         _human_type(msg_box, message)
         _log(f"⌨️ Typed message for {phone}")
-        time.sleep(random.uniform(0.4, 0.8))
-
-        # Small random pause (human "reviews" before hitting send)
-        if random.random() < 0.3:
-            time.sleep(random.uniform(0.5, 1.5))
+        time.sleep(random.uniform(0.1, 0.3))
 
         # ── Step 5: Press Enter to send ──
+        _pulse_visual_cursor(driver)
         msg_box.send_keys(Keys.ENTER)
         _log(f"⏎ Sent message to {phone}")
-        time.sleep(random.uniform(2.0, 4.0))
+        
+        # Hide cursor after send
+        _move_visual_cursor(driver, None)
+        time.sleep(random.uniform(0.3, 1.0))
 
         return True
 
@@ -884,17 +920,90 @@ def _send_message(driver, phone, message):
 #  STEALTH HELPERS
 # ═══════════════════════════════════════════
 
+# ═══════════════════════════════════════════
+#  VISUAL STEALTH HELPERS (DOM CURSOR)
+# ═══════════════════════════════════════════
+
+def _init_visual_cursor(driver):
+    """Injects a fake glowing cursor into the WhatsApp DOM."""
+    script = """
+    if (!document.getElementById('anti-cursor')) {
+        const cursor = document.createElement('div');
+        cursor.id = 'anti-cursor';
+        cursor.style.cssText = `
+            position: fixed;
+            width: 20px;
+            height: 20px;
+            background: rgba(0, 255, 255, 0.4);
+            border: 2px solid rgba(0, 255, 255, 0.8);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 999999;
+            transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.6);
+            opacity: 0;
+        `;
+        document.body.appendChild(cursor);
+    }
+    """
+    try:
+        driver.execute_script(script)
+    except: pass
+
+def _move_visual_cursor(driver, element=None):
+    """Moves the visual cursor to an element or a random spot."""
+    if element:
+        script = """
+        const cursor = document.getElementById('anti-cursor');
+        const el = arguments[0];
+        if (cursor && el) {
+            const rect = el.getBoundingClientRect();
+            const x = rect.left + (rect.width / 2);
+            const y = rect.top + (rect.height / 2);
+            cursor.style.opacity = '1';
+            cursor.style.left = x + 'px';
+            cursor.style.top = y + 'px';
+        }
+        """
+        try:
+            driver.execute_script(script, element)
+        except: pass
+    else:
+        # Move to a random waiting position or hide
+        try:
+            driver.execute_script("document.getElementById('anti-cursor').style.opacity = '0';")
+        except: pass
+
+def _pulse_visual_cursor(driver):
+    """Triggers a pulsing effect (for clicks/typing)."""
+    script = """
+    const cursor = document.getElementById('anti-cursor');
+    if (cursor) {
+        cursor.style.transform = 'translate(-50%, -50%) scale(1.5)';
+        cursor.style.background = 'rgba(0, 255, 255, 0.8)';
+        setTimeout(() => {
+            cursor.style.transform = 'translate(-50%, -50%) scale(1)';
+            cursor.style.background = 'rgba(0, 255, 255, 0.4)';
+        }, 200);
+    }
+    """
+    try:
+        driver.execute_script(script)
+    except: pass
+
+
 # Removed _bezier_point and _human_move_to
 
 
 def _human_type(element, text):
+    driver = element.parent
     for ch in text:
         element.send_keys(ch)
-        delay = random.uniform(0.03, 0.12)
-        if ch == ' ' and random.random() < 0.15:
-            delay += random.uniform(0.1, 0.4)
-        if random.random() < 0.1:
-            delay *= 0.3
+        _pulse_visual_cursor(driver)
+        delay = random.uniform(0.005, 0.02)
+        if ch == ' ' and random.random() < 0.05:
+            delay += random.uniform(0.02, 0.05)
         time.sleep(delay)
 
 
