@@ -62,11 +62,29 @@
     //  AUTHENTICATION
     // ═══════════════════════════════════════
 
+    async function loadHWID() {
+        try {
+            const res = await fetch("/hwid");
+            if (res.ok) {
+                const data = await res.json();
+                hwidDisplay.textContent = data.hwid;
+            } else {
+                hwidDisplay.textContent = "Error loading HWID";
+            }
+        } catch (e) {
+            hwidDisplay.textContent = "Offline";
+        }
+    }
+    loadHWID();
+
     if (window.APP_SESSION) {
         updateSessionUI(window.APP_SESSION);
     }
 
-    btnLogin.addEventListener("click", async () => {
+    const loginForm = document.getElementById("loginForm");
+    
+    loginForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
         const username = usernameInput.value.trim();
         const password = passwordInput.value;
         if (!username || !password) return;
@@ -74,6 +92,7 @@
         btnLogin.disabled = true;
         btnLogin.querySelector("span").classList.add("hidden");
         btnLogin.querySelector(".btn-loader").classList.remove("hidden");
+        loginError.style.color = "var(--error-color)";
         loginError.textContent = "";
 
         try {
@@ -84,14 +103,20 @@
             });
             const data = await res.json();
             
-            updateSessionUI(data);
-
-            if (data.status !== "success") {
+            if (data.status === "success") {
+                loginError.style.color = "#10b981"; // success green
+                loginError.textContent = "Login Successful! Loading...";
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } else {
                 loginError.textContent = data.message || "Login failed";
+                btnLogin.disabled = false;
+                btnLogin.querySelector("span").classList.remove("hidden");
+                btnLogin.querySelector(".btn-loader").classList.add("hidden");
             }
         } catch (e) {
             loginError.textContent = "Server connection failed";
-        } finally {
             btnLogin.disabled = false;
             btnLogin.querySelector("span").classList.remove("hidden");
             btnLogin.querySelector(".btn-loader").classList.add("hidden");
@@ -99,26 +124,43 @@
     });
 
     function updateSessionUI(session) {
-        if (session.status === "active") {
-            licenseOverlay.classList.add("hidden");
-            subStatus.classList.remove("inactive");
-            subStatus.classList.add("active");
-            subStatus.querySelector(".sub-plan").textContent = 
-                `${session.username} (${session.plan})`;
-            subSent.textContent = session.sent_today;
-            subStatus.querySelector(".sub-limit").innerHTML = 
-                `<span id="subSent">${session.sent_today}</span> / ${session.daily_limit} Daily`;
-            
-            if (session.expires_at) {
-                const date = new Date(session.expires_at);
-                const subExpires = subStatus.querySelector("#subExpires");
-                if (subExpires) subExpires.textContent = date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        try {
+            if (session.status === "active") {
+                licenseOverlay.classList.remove("visible");
+                licenseOverlay.classList.add("hidden");
+                subStatus.classList.remove("inactive");
+                subStatus.classList.add("active");
+                
+                const subPlan = subStatus.querySelector(".sub-plan");
+                if (subPlan) subPlan.textContent = `${session.username} (${session.plan})`;
+                
+                if (subSent) subSent.textContent = session.sent_today;
+                
+                const subLimit = subStatus.querySelector(".sub-limit");
+                if (subLimit) {
+                    subLimit.innerHTML = `<span id="subSent">${session.sent_today}</span> / ${session.daily_limit} Daily`;
+                }
+                
+                if (session.expires_at) {
+                    const date = new Date(session.expires_at);
+                    const subExpires = subStatus.querySelector("#subExpires") || document.getElementById("subExpires");
+                    if (subExpires) subExpires.textContent = date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+                }
+            } else {
+                licenseOverlay.classList.remove("hidden");
+                licenseOverlay.classList.add("visible");
+                subStatus.classList.add("inactive");
+                subStatus.classList.remove("active");
+                loginError.style.color = "var(--error-color)";
+                loginError.textContent = session.message || "";
             }
-        } else {
-            licenseOverlay.classList.remove("hidden");
-            subStatus.classList.add("inactive");
-            subStatus.classList.remove("active");
-            loginError.textContent = session.message || "";
+        } catch (err) {
+            console.error("Error updating UI:", err);
+            // Fallback: force hide the overlay if active so the user isn't stuck
+            if (session.status === "active" && licenseOverlay) {
+                licenseOverlay.classList.remove("visible");
+                licenseOverlay.classList.add("hidden");
+            }
         }
     }
 

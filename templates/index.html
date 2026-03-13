@@ -181,19 +181,21 @@
             </div>
             
             <div class="license-body">
-                <div class="input-group">
-                    <label for="username">Username</label>
-                    <input type="text" id="username" placeholder="Enter username" value="{{ session.username }}">
-                </div>
-                <div class="input-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" placeholder="Enter password">
-                    <p class="error-msg" id="loginError">{{ session.message }}</p>
-                </div>
-                <button class="btn btn-primary" id="btnLogin">
-                    <span>Login</span>
-                    <div class="btn-loader hidden"></div>
-                </button>
+                <form id="loginForm" onsubmit="return false;">
+                    <div class="input-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" placeholder="Enter username" value="{{ session.username }}" autocomplete="username">
+                    </div>
+                    <div class="input-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" placeholder="Enter password" autocomplete="current-password">
+                        <p class="error-msg" id="loginError">{{ session.message }}</p>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="btnLogin">
+                        <span>Login</span>
+                        <div class="btn-loader hidden"></div>
+                    </button>
+                </form>
             </div>
             
             <div class="license-footer">

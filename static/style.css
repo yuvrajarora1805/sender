@@ -909,3 +909,12 @@ html, body {
     opacity: 0.5;
     font-family: monospace;
 }
+
+/* ── Utility Classes ── */
+.hidden {
+    display: none !important;
+}
+
+.visible {
+    display: flex !important;
+}

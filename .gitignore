@@ -40,3 +40,7 @@ admin-dashboard/build/
 # OS config
 .DS_Store
 Thumbs.db
+
+# Chrome Binary
+whatsapp_sender_chrome/
+chrome-win64/

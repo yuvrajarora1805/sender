@@ -21,8 +21,6 @@ import threading
 import urllib.parse
 from datetime import datetime
 
-import pyautogui
-import pyperclip
 import winreg  # Used to detect Chrome version on Windows
 
 import undetected_chromedriver as uc
@@ -66,9 +64,6 @@ MIN_DELAY_BETWEEN   = 1.5
 MAX_DELAY_BETWEEN   = 3.0
 LONG_BREAK_EVERY    = 1000
 LONG_BREAK_DURATION = (8 * 60, 15 * 60)
-
-pyautogui.FAILSAFE = True
-pyautogui.PAUSE    = 0.05
 
 # ═══════════════════════════════════════════
 #  FLASK APP
@@ -277,6 +272,11 @@ def index():
     # Force session check on visit
     validate_session()
     return render_template("index.html", session=_state["session"])
+
+
+@app.route("/hwid", methods=["GET"])
+def hwid():
+    return jsonify({"hwid": get_hwid()})
 
 
 @app.route("/login", methods=["POST"])
@@ -792,11 +792,7 @@ def _send_message(driver, phone, message):
             _log(f"⚠️ New Chat button not found")
             return False
 
-        # Bezier-move to the New Chat button
-        loc  = new_chat_btn.location
-        size = new_chat_btn.size
-        _human_move_to(loc['x'] + size['width'] // 2, loc['y'] + size['height'] // 2)
-        time.sleep(random.uniform(0.1, 0.3))
+        # Just use DOM click
         new_chat_btn.click()
         time.sleep(random.uniform(0.8, 1.5))
 
@@ -818,14 +814,9 @@ def _send_message(driver, phone, message):
 
         if not search_box:
             _log(f"⚠️ Search box not found")
-            pyautogui.press('esc')
             return False
 
-        # Bezier-move to search box
-        s_loc  = search_box.location
-        s_size = search_box.size
-        _human_move_to(s_loc['x'] + s_size['width'] // 2, s_loc['y'] + s_size['height'] // 2)
-        time.sleep(random.uniform(0.1, 0.3))
+        # Just use DOM click
         search_box.click()
         time.sleep(random.uniform(0.5, 0.8))
 
@@ -858,15 +849,10 @@ def _send_message(driver, phone, message):
 
         if not msg_box:
             _log(f"⚠️ Message input not found for {phone} — chat may not have opened")
-            pyautogui.press('esc')
             time.sleep(0.5)
             return False
 
-        # ── Step 4: Bezier-move to message box, click, type message ──
-        m_loc  = msg_box.location
-        m_size = msg_box.size
-        _human_move_to(m_loc['x'] + m_size['width'] // 2, m_loc['y'] + m_size['height'] // 2)
-        time.sleep(random.uniform(0.15, 0.35))
+        # DOM click
         msg_box.click()
         time.sleep(random.uniform(0.3, 0.6))
 
@@ -887,11 +873,6 @@ def _send_message(driver, phone, message):
         _log(f"⏎ Sent message to {phone}")
         time.sleep(random.uniform(2.0, 4.0))
 
-        # Small random mouse drift after sending (natural behaviour)
-        cx, cy = pyautogui.position()
-        pyautogui.moveTo(cx + random.randint(-30, 30), cy + random.randint(-20, 20),
-                         duration=random.uniform(0.2, 0.5))
-
         return True
 
     except Exception as e:
@@ -903,31 +884,7 @@ def _send_message(driver, phone, message):
 #  STEALTH HELPERS
 # ═══════════════════════════════════════════
 
-def _bezier_point(t, p0, p1, p2, p3):
-    return (
-        (1-t)**3*p0[0] + 3*(1-t)**2*t*p1[0] + 3*(1-t)*t**2*p2[0] + t**3*p3[0],
-        (1-t)**3*p0[1] + 3*(1-t)**2*t*p1[1] + 3*(1-t)*t**2*p2[1] + t**3*p3[1],
-    )
-
-
-def _human_move_to(x, y):
-    start_x, start_y = pyautogui.position()
-    end_x, end_y     = int(x), int(y)
-    cp1 = (start_x + random.randint(-80, 80), start_y + random.randint(-80, 80))
-    cp2 = (end_x   + random.randint(-80, 80), end_y   + random.randint(-80, 80))
-    steps    = random.randint(30, 60)
-    duration = random.uniform(0.4, 1.2)
-    for i in range(steps + 1):
-        if _state["shutdown"]:
-            break
-        t = i / steps
-        t_eased = (1 - math.cos(t * math.pi)) / 2
-        bx, by  = _bezier_point(t_eased, (start_x, start_y), cp1, cp2, (end_x, end_y))
-        pyautogui.moveTo(int(bx), int(by))
-        time.sleep(duration / steps)
-    pyautogui.moveTo(end_x + random.randint(-1, 1), end_y + random.randint(-1, 1))
-    time.sleep(random.uniform(0.05, 0.15))
-    pyautogui.moveTo(end_x, end_y)
+# Removed _bezier_point and _human_move_to
 
 
 def _human_type(element, text):
@@ -946,16 +903,6 @@ def _simulate_idle(driver, duration=None):
         duration = random.uniform(2, 8)
     end = time.time() + duration
     while time.time() < end and not _state["shutdown"]:
-        action = random.choice(["move", "pause", "scroll"])
-        if action == "move":
-            cx, cy = pyautogui.position()
-            pyautogui.moveTo(cx + random.randint(-60, 60), cy + random.randint(-40, 40),
-                             duration=random.uniform(0.3, 0.8))
-        elif action == "scroll":
-            try:
-                pyautogui.scroll(random.choice([-1, 1]) * random.randint(1, 3))
-            except:
-                pass
         time.sleep(random.uniform(0.5, 2.0))
 
 
