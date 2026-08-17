@@ -49,7 +49,7 @@ def resource_path(relative_path):
 # ═══════════════════════════════════════════
 
 # Update this to your Next.js admin dashboard URL
-API_BASE_URL = "https://wa.voreva.in/api" 
+API_BASE_URL = "https://sender.omvky.com/api" 
 SESSION_FILE = resource_path("session.json")
 
 # Portability: Save profile in the user's home folder to avoid C:\temp permission/stability issues
@@ -58,12 +58,15 @@ LOG_DIR     = os.path.join(os.path.expanduser("~"), "whatsapp_sender_logs")
 
 WAIT_TIMEOUT = 120
 
-# Rate limiting
-MAX_SENDS_PER_HOUR  = 5000
-MIN_DELAY_BETWEEN   = 0.2
-MAX_DELAY_BETWEEN   = 0.8
-LONG_BREAK_EVERY    = 2000
-LONG_BREAK_DURATION = (1 * 60, 3 * 60)
+# ── Anti-Ban Rate Limits ──
+# These are conservative values. WhatsApp flags on velocity, not just volume.
+MAX_SENDS_PER_HOUR  = 80           # Safe: ~1.3/min average
+MIN_DELAY_BETWEEN   = 8            # Min 8s between messages
+MAX_DELAY_BETWEEN   = 25           # Max 25s between messages
+LONG_BREAK_EVERY    = 30           # Longer break every 30 sends
+LONG_BREAK_DURATION = (3 * 60, 8 * 60)  # 3–8 min break
+MICRO_PAUSE_EVERY   = random.randint(10, 15)  # Short pause every ~10-15 sends
+MICRO_PAUSE_DURATION = (20, 60)   # 20-60 second micro-pause
 
 # ═══════════════════════════════════════════
 #  FLASK APP
@@ -99,6 +102,43 @@ _state = {
     }
 }
 _state_lock = threading.Lock()
+
+# ── Message Spinner (anti-fingerprint) ──
+# Randomly substitutes words/punctuation so each message is unique.
+# Add your own synonyms to expand the pool.
+_SPINNER_SYNONYMS = [
+    # (original_word, [replacements])
+    ("Hello",   ["Hi", "Hey", "Hii", "Hello"]),
+    ("hi",      ["hi", "hey", "hii", "hello"]),
+    ("hello",   ["hello", "hi", "hey", "hii"]),
+    ("please",  ["please", "kindly", "pls", "plz"]),
+    ("thanks",  ["thanks", "thank you", "thankyou", "thnks"]),
+    ("Thank you", ["Thank you", "Thanks", "Thankyou", "Thnx"]),
+    ("check",   ["check", "see", "view", "look at"]),
+    ("offer",   ["offer", "deal", "discount"]),
+    ("Sir",     ["Sir", "Ma'am", ""]),
+]
+
+_ZERO_WIDTH_CHARS = ["\u200b", "\u200c", "\u200d", ""]  # invisible chars
+
+def _spin_message(message: str) -> str:
+    """Makes each message subtly unique to avoid WhatsApp fingerprinting."""
+    result = message
+
+    # 1. Word substitution
+    for word, replacements in _SPINNER_SYNONYMS:
+        if word in result and random.random() < 0.6:
+            result = result.replace(word, random.choice(replacements), 1)
+
+    # 2. Randomly append a zero-width invisible char (breaks hash fingerprint)
+    zwc = random.choice(_ZERO_WIDTH_CHARS)
+    result = result + zwc
+
+    # 3. Randomly vary punctuation at end
+    if result.rstrip(zwc).endswith(".") and random.random() < 0.4:
+        result = result.rstrip(".").rstrip() + random.choice([".", "!", ""])
+
+    return result
 
 # SSE subscribers
 _sse_clients = []
@@ -484,7 +524,7 @@ def _send_worker():
                 _update_progress(status="sending")
 
             phone   = row["phone"]
-            message = row["message"]
+            message = _spin_message(row["message"])  # 🔄 Unique per send
             _log(f"📤 [{i+1}/{total}] Sending to {phone}...", row=i+1, phone=phone)
 
             ok = _send_message(driver, phone, message)
@@ -495,29 +535,38 @@ def _send_worker():
                 with _state_lock:
                     _state["progress"]["success"] += 1
                     _state["session"]["sent_today"] += 1
-                
+
                 # Report to server
                 report_usage(1)
 
                 _log(f"✅ [{i+1}/{total}] Sent to {phone}", row=i+1, phone=phone, ok=True)
-                
+
                 # Check limit again
                 with _state_lock:
                     if _state["session"]["sent_today"] >= _state["session"]["daily_limit"]:
-                         _log("🛑 Daily limit reached! Stopping...")
-                         _state["shutdown"] = True
+                        _log("🛑 Daily limit reached! Stopping...")
+                        _state["shutdown"] = True
             else:
                 with _state_lock:
                     _state["progress"]["failed"] += 1
                 _log(f"❌ [{i+1}/{total}] Failed for {phone}", row=i+1, phone=phone, ok=False)
 
-            _update_progress(current=i+1)
+            _update_progress(current=i + 1)
 
-            # ── Human-like delay ──
+            # ── Human-like delay with micro-pauses ──
             if i < total - 1 and not _state["shutdown"]:
+                # Micro-pause every ~10-15 sends (simulates distraction/reading)
+                if sends_since_break > 0 and sends_since_break % MICRO_PAUSE_EVERY == 0:
+                    pause = random.randint(*MICRO_PAUSE_DURATION)
+                    _log(f"☕ Micro-pause ({pause}s) — simulating human behavior")
+                    _update_progress(status="paused")
+                    _interruptible_sleep(pause)
+                    _update_progress(status="sending")
+
                 delay = random.uniform(MIN_DELAY_BETWEEN, MAX_DELAY_BETWEEN)
-                _simulate_idle(driver, duration=min(delay * 0.3, 3))
-                _interruptible_sleep(delay - min(delay * 0.3, 3))
+                _log(f"⏱ Next send in {delay:.1f}s")
+                _simulate_idle(driver, duration=min(delay * 0.2, 5))
+                _interruptible_sleep(delay - min(delay * 0.2, 5))
                 _keep_session_alive(driver)
 
         status = "done" if not _state["shutdown"] else "stopped"
@@ -822,18 +871,29 @@ def _send_message(driver, phone, message):
         new_chat_btn.click()
         time.sleep(random.uniform(0.2, 0.5))
 
-        # ── Step 2: Find the search box (v145 contenteditable div) ──
+        # ── Step 2: Find the search/number input in the New Chat panel ──
+        # Actual element: <input type="text" data-tab="3" role="textbox">
         _log(f"🔍 Typing number {phone}...")
         search_box = None
-        for xpath in [
-            "//div[@contenteditable='true'][@data-tab='3']",
-            "//div[@contenteditable='true'][@role='textbox']",
-        ]:
+
+        search_xpaths = [
+            # ✅ Correct — actual element is an <input>, not a <div>
+            "//input[@data-tab='3']",
+            "//input[@type='text'][@data-tab='3']",
+            "//input[@role='textbox'][@data-tab='3']",
+            # Broader fallbacks
+            "//input[@role='textbox']",
+            "//input[@type='text'][contains(@class,'html-input')]",
+        ]
+
+        for xpath in search_xpaths:
             try:
-                search_box = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, xpath))
+                el = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, xpath))
                 )
-                if search_box:
+                if el and el.is_displayed():
+                    search_box = el
+                    _log(f"✅ Search box found via: {xpath[:60]}")
                     break
             except:
                 continue
@@ -847,16 +907,29 @@ def _send_message(driver, phone, message):
         time.sleep(0.2)
         _pulse_visual_cursor(driver)
 
-        # Just use DOM click
-        search_box.click()
-        time.sleep(random.uniform(0.1, 0.3))
+        # JS click to ensure focus (bypasses any overlay interception)
+        driver.execute_script("arguments[0].click();", search_box)
+        time.sleep(random.uniform(0.1, 0.2))
 
-        search_box.send_keys(Keys.CONTROL + "a")
-        search_box.send_keys(Keys.BACKSPACE)
-        time.sleep(random.uniform(0.1, 0.3))
+        # Clear — use .clear() for <input> elements (reliable, unlike Ctrl+A on divs)
+        search_box.clear()
+        time.sleep(0.1)
 
+        # Type the phone number
         _human_type(search_box, phone)
-        time.sleep(random.uniform(0.1, 0.3))
+        time.sleep(random.uniform(0.3, 0.6))
+
+        # Verify text was typed; fallback to JS .value setter if not
+        typed_val = search_box.get_attribute("value") or ""
+        if not typed_val.strip():
+            _log(f"⚠️ Type didn't stick — using JS .value fallback")
+            driver.execute_script(
+                "arguments[0].value = arguments[1];"
+                "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+                "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));",
+                search_box, phone
+            )
+            time.sleep(0.3)
 
         search_box.send_keys(Keys.ENTER)
         _log(f"⏎ Pressed Enter to open chat for {phone}")

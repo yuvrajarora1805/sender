@@ -1,9 +1,9 @@
 <?php
 // Database configuration
-$host = 'localhost';
+$host = getenv('DB_HOST') ?: 'wa-db';
 $db   = 'license_db';
-$user = 'root'; // Change if needed
-$pass = '';     // Change if needed
+$user = getenv('DB_USER') ?: 'license_user';
+$pass = getenv('DB_PASSWORD') ?: 'secure_database_password';
 $charset = 'utf8mb4';
 
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset";

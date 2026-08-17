@@ -8,7 +8,7 @@ services:
     container_name: wa-admin
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "3008:3000"
     environment:
       - DB_HOST=wa-db
       - DB_USER=license_user
@@ -25,7 +25,7 @@ services:
     container_name: wa-db
     restart: unless-stopped
     ports:
-      - "3307:3306"
+      - "3308:3306"
     command: --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-super_secure_root}
